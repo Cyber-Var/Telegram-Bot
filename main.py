@@ -1,84 +1,92 @@
-from telegram.ext.updater import Updater
-from telegram.update import Update
-from telegram.ext.callbackcontext import CallbackContext
-from telegram.ext.commandhandler import CommandHandler
-from telegram.ext.messagehandler import MessageHandler
-from telegram.ext.filters import Filters
-
-import requests
 from bs4 import BeautifulSoup as bs
-# import pandas as pd
 import requests
+import telebot
 
-
-updater = Updater("5571019908:AAEqq_-fzC5p-lz44h2-dSFbtJ6jQ2q9D2c", use_context=True)
+bot = telebot.TeleBot("5571019908:AAEqq_-fzC5p-lz44h2-dSFbtJ6jQ2q9D2c")
 
 languages = {
-    "english": "Enter a word",
-    "german": "Geben Sie ein Wort ein",
-    "russian": "Введите слово"
+    "english": "Enter a word, or type /stop",
+    "german": "Geben Sie ein Wort ein, oder schreiben Sie /stop ein",
+    "russian": "Введите слово, или введите /stop"
+}
+
+invalid_word = {
+    "english": "Invalid word, please try again, or type /stop",
+    "german": "Ungültiges Wort, bitte versuchen Sie es erneut, oder schreiben Sie /stop ein",
+    "russian": "Неверное слово, попробуйте еще раз, или введите /stop"
 }
 
 der_die_das = ["der", "die", "das"]
 
-
-class Handling:
-
-    choose_lang = False
-    enter_word = False
-    language = ""
-
-    def __init__(self):
-        self.handle()
-
-    def start(self, update: Update, context: CallbackContext):
-        self.choose_lang = True
-        update.message.reply_text("Please choose a language")
-
-    def help(self, update: Update, context: CallbackContext):
-        update.message.reply_text("This is help")
-
-    def unknown_text(self, update: Update, context: CallbackContext):
-        entered = update.message.text.lower()
-        if self.choose_lang:
-            if entered in languages:
-                self.language = entered
-                update.message.reply_text(languages[self.language])
-                self.choose_lang = False
-                self.enter_word = True
-            else:
-                update.message.reply_text("Please choose English, Russian or German")
-        elif self.enter_word:
-            update.message.reply_text(self.get_artikel(entered))
-
-    def get_artikel(self, word):
-        result = ""
-        for i in range(3):
-            url = "https://der-artikel.de/{}/{}.html".format(der_die_das[i], word.capitalize())
-            page = requests.get(url)
-            data = bs(page.content)
-            header = data.find(class_='masthead d-flex')
-            try:
-                header.find(class_='mb-1')
-                result = der_die_das[i].capitalize()
-                break
-            except Exception:
-                continue
-        return result
-
-    ''' def unknown(self, update: Update, context: CallbackContext):
-        update.message.reply_text(
-            "Sorry '%s' is not a valid command" % update.message.text) '''
-
-    def handle(self):
-        updater.dispatcher.add_handler(CommandHandler('start', self.start))
-        updater.dispatcher.add_handler(CommandHandler('help', self.help))
-        # updater.dispatcher.add_handler(MessageHandler(Filters.text, unknown))
-        # updater.dispatcher.add_handler(MessageHandler(
-        # Filters.command, unknown))
-        updater.dispatcher.add_handler(MessageHandler(Filters.text, self.unknown_text))
-
-        updater.start_polling()
+entering_word = [False]
+language = [""]
 
 
-Handling()
+@bot.message_handler(commands=['start'])
+def start(message):
+    keyboard = telebot.types.InlineKeyboardMarkup()
+    keyboard.row(
+        telebot.types.InlineKeyboardButton('English', callback_data='lang-english')
+    )
+    keyboard.row(
+        telebot.types.InlineKeyboardButton('Russian', callback_data='lang-russian')
+    )
+    keyboard.row(
+        telebot.types.InlineKeyboardButton('German', callback_data='lang-german'),
+    )
+    bot.send_message(message.chat.id, "Please choose a language", reply_markup=keyboard)
+
+
+@bot.message_handler(commands=['help'])
+def help(message):
+    bot.send_message(message.chat.id, "Type:\n"
+                                      "/start, to start the Bot\n"
+                                      "/help, to view help message\n"
+                                      "/stop, to pause the Bot")
+
+
+@bot.message_handler(commands=['stop'])
+def stop(message):
+    entering_word[0] = False
+    bot.send_message(message.chat.id, "The chat is paused. To reactivate, type in /start or /help")
+
+
+@bot.callback_query_handler(func=lambda call: True)
+def iq_callback(query):
+    data = query.data
+    if data.startswith('lang-'):
+        bot.answer_callback_query(query.id)
+        entering_word[0] = True
+        language[0] = query.data[5:]
+        bot.send_message(query.message.chat.id, languages[language[0]])
+    else:
+        print(query.message)
+
+
+@bot.message_handler(regexp="(.*?)")
+def handle_message(message):
+    if entering_word[0]:
+        artikel = get_artikel(message.text)
+        if artikel == "":
+            bot.send_message(message.chat.id, invalid_word[language[0]])
+        else:
+            bot.send_message(message.chat.id, "Artikel: " + artikel)
+
+
+def get_artikel(word):
+    result = ""
+    for i in range(3):
+        url = "https://der-artikel.de/{}/{}.html".format(der_die_das[i], word.capitalize())
+        page = requests.get(url)
+        data = bs(page.content, "html.parser")
+        header = data.find(class_='masthead d-flex')
+        try:
+            header.find(class_='mb-1')
+            result = der_die_das[i].capitalize()
+            break
+        except Exception:
+            continue
+    return result
+
+
+bot.polling(none_stop=True)
