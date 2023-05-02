@@ -2,7 +2,7 @@ from bs4 import BeautifulSoup as bs
 import requests
 import telebot
 
-bot = telebot.TeleBot("5571019908:AAEqq_-fzC5p-lz44h2-dSFbtJ6jQ2q9D2c")
+bot = telebot.TeleBot("key here")
 
 languages = {
     "english": "Enter a word, or type /stop",
